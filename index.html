@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Выбор адреса</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=74752381-5ef1-4dbe-9ecf-9be7281c09f8&lang=ru_RU"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
+        #map { width: 100%; height: 100%; }
+        .controls { 
+            position: absolute; 
+            top: 15px; 
+            right: 15px; 
+            z-index: 1000; 
+            background: white; 
+            padding: 15px; 
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            max-width: 300px;
+        }
+        button { 
+            padding: 12px 20px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            margin: 5px;
+            font-size: 14px;
+            width: 100%;
+        }
+        button.cancel { background: #6c757d; }
+        button:hover { opacity: 0.9; }
+        .address-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-size: 14px;
+            border: 1px solid #e9ecef;
+        }
+        .loading {
+            color: #6c757d;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="controls">
+        <div class="address-info" id="addressDisplay">
+            <div class="loading">Выберите место на карте...</div>
+        </div>
+        <button onclick="confirmLocation()">✅ Выбрать этот адрес</button>
+        <button class="cancel" onclick="goBack()">↩️ Назад</button>
+    </div>
+
+    <script>
+        let map, placemark;
+        let selectedCoords = null;
+        let selectedAddress = "";
+        
+        // Инициализация Telegram Web App
+        Telegram.WebApp.ready();
+        Telegram.WebApp.expand();
+        
+        // Инициализация карты
+        ymaps.ready(init);
+        
+        function init() {
+            // Создаем карту
+            map = new ymaps.Map('map', {
+                center: [55.7558, 37.6173], // Москва по умолчанию
+                zoom: 10
+            });
+            
+            // Создаем метку
+            placemark = new ymaps.Placemark(map.getCenter(), {}, {
+                draggable: true,
+                preset: 'islands#blueDotIcon'
+            });
+            
+            // Добавляем метку на карту
+            map.geoObjects.add(placemark);
+            
+            // Обработчик клика по карте
+            map.events.add('click', function(e) {
+                const coords = e.get('coords');
+                placemark.geometry.setCoordinates(coords);
+                getAddressFromCoords(coords);
+            });
+            
+            // Обработчик перемещения метки
+            placemark.events.add('dragend', function() {
+                const coords = placemark.geometry.getCoordinates();
+                getAddressFromCoords(coords);
+            });
+            
+            // Получаем адрес для начального положения
+            getAddressFromCoords(map.getCenter());
+        }
+        
+        function getAddressFromCoords(coords) {
+            selectedCoords = coords;
+            
+            // Показываем загрузку
+            document.getElementById('addressDisplay').innerHTML = 
+                '<div class="loading">Определяем адрес...</div>';
+            
+            // Используем Яндекс Геокодер для получения адреса
+            ymaps.geocode(coords).then(function(res) {
+                const firstGeoObject = res.geoObjects.get(0);
+                
+                if (firstGeoObject) {
+                    selectedAddress = firstGeoObject.getAddressLine();
+                    
+                    // Показываем адрес пользователю
+                    document.getElementById('addressDisplay').innerHTML = 
+                        `<strong>Выбранный адрес:</strong><br>${selectedAddress}`;
+                } else {
+                    document.getElementById('addressDisplay').innerHTML = 
+                        '<div class="loading">Адрес не определен</div>';
+                }
+            }).catch(function(error) {
+                document.getElementById('addressDisplay').innerHTML = 
+                    '<div class="loading">Ошибка определения адреса</div>';
+            });
+        }
+        
+        function confirmLocation() {
+            if (!selectedCoords || !selectedAddress) {
+                alert('Пожалуйста, выберите местоположение на карте');
+                return;
+            }
+            
+            // Отправляем данные в бота
+            Telegram.WebApp.sendData(JSON.stringify({
+                latitude: selectedCoords[0],
+                longitude: selectedCoords[1],
+                address: selectedAddress,
+                coordinates: `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`
+            }));
+            
+            Telegram.WebApp.close();
+        }
+        
+        function goBack() {
+            Telegram.WebApp.close();
+        }
+    </script>
+</body>
+</html>
