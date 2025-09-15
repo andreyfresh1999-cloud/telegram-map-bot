@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Выбор адреса на карте</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=AQVN3PPHRO_V9BVXewsyJQ00foVcabytG0PjfTCp&lang=ru_RU"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        #map { width: 100%; height: 100%; }
+        .controls { 
+            position: absolute; 
+            top: 15px; 
+            right: 15px; 
+            z-index: 1000; 
+            background: white; 
+            padding: 15px; 
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            max-width: 300px;
+        }
+        button { 
+            padding: 12px 20px; 
+            background: #40a7e3; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            margin: 5px;
+            font-size: 14px;
+            width: 100%;
+            font-weight: 500;
+        }
+        button.cancel { background: #8e8e93; }
+        button:disabled { 
+            background: #cccccc; 
+            cursor: not-allowed; 
+        }
+        button:hover:not(:disabled) { opacity: 0.9; }
+        .address-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-size: 14px;
+            border: 1px solid #e9ecef;
+            min-height: 60px;
+        }
+        .loading {
+            color: #8e8e93;
+            font-style: italic;
+        }
+        .error {
+            color: #ff3b30;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="controls">
+        <div class="address-info" id="addressDisplay">
+            <div class="loading">Загрузка карты...</div>
+        </div>
+        <button id="confirmBtn" onclick="confirmLocation()" disabled>✅ Выбрать этот адрес</button>
+        <button class="cancel" onclick="goBack()">↩️ Назад</button>
+    </div>
+
+    <script>
+        // Инициализация Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        
+        let map, placemark;
+        let selectedCoords = null;
+        let selectedAddress = "";
+        let isMapLoaded = false;
+        
+        // Инициализация карты
+        ymaps.ready(init);
+        
+        function init() {
+            try {
+                // Создаем карту
+                map = new ymaps.Map('map', {
+                    center: [55.7558, 37.6173],
+                    zoom: 10
+                });
+                
+                // Создаем метку
+                placemark = new ymaps.Placemark(map.getCenter(), {}, {
+                    draggable: true,
+                    preset: 'islands#blueDotIcon'
+                });
+                
+                // Добавляем метку на карту
+                map.geoObjects.add(placemark);
+                
+                // Обработчик клика по карте
+                map.events.add('click', function(e) {
+                    const coords = e.get('coords');
+                    updateLocation(coords);
+                });
+                
+                // Обработчик перемещения метки
+                placemark.events.add('dragend', function() {
+                    const coords = placemark.geometry.getCoordinates();
+                    updateLocation(coords);
+                });
+                
+                // Получаем адрес для начального положения
+                updateLocation(map.getCenter());
+                
+                isMapLoaded = true;
+                document.getElementById('confirmBtn').disabled = false;
+                
+            } catch (error) {
+                document.getElementById('addressDisplay').innerHTML = 
+                    '<div class="error">Ошибка загрузки карты</div>';
+            }
+        }
+        
+        function updateLocation(coords) {
+            selectedCoords = coords;
+            
+            // Показываем загрузку
+            document.getElementById('addressDisplay').innerHTML = 
+                '<div class="loading">Определяем адрес...</div>';
+            
+            // Используем Яндекс Геокодер для получения адреса
+            ymaps.geocode(coords).then(function(res) {
+                const firstGeoObject = res.geoObjects.get(0);
+                
+                if (firstGeoObject) {
+                    selectedAddress = firstGeoObject.getAddressLine();
+                    
+                    // Показываем адрес пользователю
+                    document.getElementById('addressDisplay').innerHTML = 
+                        `<strong>Выбранный адрес:</strong><br>${selectedAddress}`;
+                } else {
+                    document.getElementById('addressDisplay').innerHTML = 
+                        '<div class="loading">Адрес не определен</div>';
+                }
+            }).catch(function(error) {
+                document.getElementById('addressDisplay').innerHTML = 
+                    '<div class="error">Ошибка определения адреса</div>';
+            });
+        }
+        
+        function confirmLocation() {
+            if (!selectedCoords || !selectedAddress) {
+                tg.showPopup({
+                    title: "Внимание",
+                    message: "Пожалуйста, выберите местоположение на карте",
+                    buttons: [{type: "ok"}]
+                });
+                return;
+            }
+            
+            // Отправляем данные в бота
+            const locationData = {
+                latitude: selectedCoords[0],
+                longitude: selectedCoords[1],
+                address: selectedAddress,
+                coordinates: `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`,
+                user_id: tg.initDataUnsafe.user?.id,
+                init_data: tg.initData
+            };
+            
+            tg.sendData(JSON.stringify(locationData));
+            tg.close();
+        }
+        
+        function goBack() {
+            tg.close();
+        }
+    </script>
+</body>
+</html>
